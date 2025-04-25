@@ -154,7 +154,7 @@
     // Decode video ID and initialize player UI
     const decodedId = atob(idParam);
     const iframe = document.getElementById('ytPlayer');
-    iframe.src = `https://www.youtube-nocookie.com/embed/${decodedId}?enablejsapi=1&controls=0`;
+    iframe.src = `https://www.youtube-nocookie.com/embed/${decodedId}?enablejsapi=1&controls=0&rel=0`;
     document.getElementById('playerContainer').style.display = 'block';
 
     // YouTube API & controls logic
