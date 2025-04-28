@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <!-- Mobile viewport -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Video Player</title>
   <!-- CryptoJS for MD5 hashing -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
@@ -17,34 +19,36 @@
     .player-container {
       position: relative;
       max-width: 900px;
-      margin: 40px auto;
+      margin: 20px auto;
       background: #000;
       border-radius: 12px;
       overflow: hidden;
       box-shadow: 0 0 20px #000;
       display: none; /* hidden until token validated */
     }
-    iframe {
+    /* 16:9 Aspect Ratio Wrapper */
+    .video-wrapper {
+      position: relative;
       width: 100%;
-      height: 500px;
+      padding-bottom: 56.25%; /* = 9/16 */
+    }
+    .video-wrapper iframe,
+    .video-wrapper #overlayMessage {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
       pointer-events: none;
     }
     #overlayMessage {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 500px;
-      background: black;
-      color: white;
+      background: rgba(0,0,0,0.8);
       display: flex;
       align-items: center;
       justify-content: center;
       text-align: center;
-      font-size: 20px;
+      font-size: 1rem;
       font-weight: bold;
       z-index: 2;
-      pointer-events: none;
+      color: #fff;
     }
     .progress-bar {
       width: 100%;
@@ -60,14 +64,14 @@
     }
     .time {
       text-align: center;
-      margin: 10px 0;
-      font-size: 14px;
+      margin: 8px 0;
+      font-size: 0.9rem;
     }
     .controls {
       display: flex;
       flex-wrap: wrap;
       gap: 12px;
-      padding: 16px;
+      padding: 12px;
       justify-content: center;
       background-color: rgba(0,0,0,0.8);
       transition: opacity 0.3s;
@@ -77,8 +81,8 @@
       pointer-events: none;
     }
     button, select, input[type=range] {
-      font-size: 16px;
-      padding: 8px 14px;
+      font-size: 1rem;
+      padding: 6px 12px;
       border-radius: 6px;
       border: none;
       cursor: pointer;
@@ -96,7 +100,8 @@
       gap: 6px;
     }
     .volume-slider {
-      width: 100px;
+      width: 80px;
+      max-width: 30vw;
     }
     /* Themes */
     body.classic .progress { background: #FFD700; }
@@ -106,14 +111,34 @@
     body.lime .progress { background: #ADFF2F; }
     body.lime button { background: #9ACD32; color: #111; }
     body.lime button:hover { background: #bfff00; }
+
+    /* Responsive tweaks */
+    @media (max-width: 600px) {
+      .controls {
+        gap: 8px;
+        padding: 8px;
+      }
+      button, select, input[type=range] {
+        font-size: 0.85rem;
+        padding: 4px 8px;
+      }
+      .time {
+        font-size: 0.8rem;
+      }
+      p { font-size: 0.9rem; margin: 10px; }
+    }
   </style>
 </head>
 <body class="classic" oncontextmenu="return false;">
 
   <div class="player-container" id="playerContainer">
-    <iframe id="ytPlayer" allow="autoplay; encrypted-media" allowfullscreen></iframe>
-    <div id="overlayMessage">Click on Play button to start playback.</div>
-    <div class="progress-bar" onclick="seekVideo(event)"><div class="progress" id="progressBar"></div></div>
+    <div class="video-wrapper">
+      <iframe id="ytPlayer" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+      <div id="overlayMessage">Click on Play button to start playback.</div>
+    </div>
+    <div class="progress-bar" onclick="seekVideo(event)">
+      <div class="progress" id="progressBar"></div>
+    </div>
     <div class="time" id="timeDisplay">0:00 / 0:00</div>
     <div class="controls" id="controls">
       <button id="playPauseBtn" onclick="togglePlayPause()">Play</button>
@@ -129,38 +154,32 @@
       </select>
     </div>
   </div>
-  <p style="text-align:center"> Press "Esc" button on your keyboard to exit from fullscreen.</p>
+
+  <p style="text-align:center">
+    Press "Esc" button on your keyboard to exit from fullscreen.
+  </p>
 
   <script>
-    // Parse URL parameters
+    // --- your existing JS logic remains unchanged ---
     const params = new URLSearchParams(window.location.search);
     const idParam = params.get('id') || '';
     const tokenParam = params.get('token') || '';
-
-    // Compute today's MD5 token
     const today = new Date();
     const dd = String(today.getDate()).padStart(2, '0');
     const mm = String(today.getMonth()+1).padStart(2, '0');
     const yy = String(today.getFullYear()).slice(-2);
     const key = dd + mm + yy;
     const validToken = CryptoJS.MD5(key).toString();
-
-    // Validate token
     if (tokenParam !== validToken) {
       document.body.innerHTML = '<div style="display:flex; height:100vh; justify-content:center; align-items:center; background:#fff; color:#000; font-size:24px;">Access Denied</div>';
       throw new Error('Invalid access token');
     }
-
-    // Decode video ID and initialize player UI
     const decodedId = atob(idParam);
     const iframe = document.getElementById('ytPlayer');
     iframe.src = `https://www.youtube-nocookie.com/embed/${decodedId}?enablejsapi=1&controls=0&rel=0`;
     document.getElementById('playerContainer').style.display = 'block';
-
-    // YouTube API & controls logic
     let player, duration = 0;
     const playPauseBtn = document.getElementById('playPauseBtn');
-
     function onYouTubeIframeAPIReady() {
       player = new YT.Player('ytPlayer', {
         events: { onReady: () => {
@@ -172,8 +191,15 @@
     }
     function togglePlayPause() {
       const state = player.getPlayerState();
-      if (state === 1) { player.pauseVideo(); playPauseBtn.textContent = 'Play'; document.getElementById('overlayMessage').style.display = 'flex'; }
-      else { player.playVideo(); playPauseBtn.textContent = 'Pause'; document.getElementById('overlayMessage').style.display = 'none'; }
+      if (state === 1) {
+        player.pauseVideo();
+        playPauseBtn.textContent = 'Play';
+        document.getElementById('overlayMessage').style.display = 'flex';
+      } else {
+        player.playVideo();
+        playPauseBtn.textContent = 'Pause';
+        document.getElementById('overlayMessage').style.display = 'none';
+      }
     }
     function changeVolume(slider) { player.setVolume(parseInt(slider.value)); }
     function toggleFullscreen() {
@@ -190,16 +216,29 @@
         document.getElementById('progressBar').style.width = pct + '%';
         document.getElementById('timeDisplay').textContent = `${formatTime(current)} / ${formatTime(duration)}`;
         const s = player.getPlayerState();
-        if (s === 1) { playPauseBtn.textContent = 'Pause'; document.getElementById('overlayMessage').style.display = 'none'; }
-        else if (s === 2) { playPauseBtn.textContent = 'Play'; document.getElementById('overlayMessage').style.display = 'flex'; }
+        if (s === 1) {
+          playPauseBtn.textContent = 'Pause';
+          document.getElementById('overlayMessage').style.display = 'none';
+        } else if (s === 2) {
+          playPauseBtn.textContent = 'Play';
+          document.getElementById('overlayMessage').style.display = 'flex';
+        }
       }
       requestAnimationFrame(updateProgress);
     }
-    function formatTime(t) { const m = Math.floor(t/60); const s = String(Math.floor(t%60)).padStart(2,'0'); return `${m}:${s}`; }
-    function seekVideo(e) { const r = e.currentTarget.getBoundingClientRect(); const p = (e.clientX - r.left)/r.width; player.seekTo(p*duration, true); }
-    function switchStyle(style) { document.body.className = style; }
-
-    // Auto-hide controls
+    function formatTime(t) {
+      const m = Math.floor(t/60);
+      const s = String(Math.floor(t%60)).padStart(2,'0');
+      return `${m}:${s}`;
+    }
+    function seekVideo(e) {
+      const r = e.currentTarget.getBoundingClientRect();
+      const p = (e.clientX - r.left)/r.width;
+      player.seekTo(p*duration, true);
+    }
+    function switchStyle(style) {
+      document.body.className = style;
+    }
     let controlsTimeout;
     const controlsEl = document.getElementById('controls');
     document.body.addEventListener('mousemove', () => {
@@ -207,8 +246,6 @@
       clearTimeout(controlsTimeout);
       controlsTimeout = setTimeout(() => controlsEl.classList.add('hidden'), 3000);
     });
-
-    // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
       switch(e.code) {
         case 'Space': e.preventDefault(); togglePlayPause(); break;
@@ -217,8 +254,6 @@
         case 'KeyF': toggleFullscreen(); break;
       }
     });
-
-    // Load YouTube Iframe API
     const tag = document.createElement('script');
     tag.src = "https://www.youtube.com/iframe_api";
     document.body.appendChild(tag);
