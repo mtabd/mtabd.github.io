@@ -26,11 +26,17 @@
       box-shadow: 0 0 20px #000;
       display: none; /* hidden until token validated */
     }
-    /* 16:9 Aspect Ratio */
+    /* Video wrapper: 16:9 aspect ratio by default */
     .video-wrapper {
       position: relative;
       width: 100%;
       padding-bottom: 56.25%;
+    }
+    /* Override in fullscreen so wrapper fills viewport */
+    .video-wrapper:fullscreen {
+      width: 100%;
+      height: 100%;
+      padding-bottom: 0;
     }
     .video-wrapper iframe,
     .video-wrapper #overlayMessage {
@@ -76,10 +82,6 @@
       background-color: rgba(0,0,0,0.8);
       transition: opacity 0.3s;
     }
-    .controls.hidden {
-      opacity: 0;
-      pointer-events: none;
-    }
     button, select, input[type=range] {
       font-size: 1rem;
       padding: 6px 12px;
@@ -102,6 +104,29 @@
     .volume-slider {
       width: 80px;
       max-width: 30vw;
+    }
+    /* Cover bars to hide YouTube overlay */
+    .cover-bar {
+      position: absolute;
+      left: 0;
+      width: 100%;
+      background: #000;
+      display: none;
+      z-index: 4;
+      pointer-events: none;
+    }
+    .top-cover {
+      top: 0;
+      height: 60px;
+    }
+    .bottom-cover {
+      bottom: 0;
+      height: 50px;
+    }
+    /* Ensure cover bars also fill fullscreen wrapper */
+    .video-wrapper:fullscreen .cover-bar {
+      left: 0;
+      width: 100%;
     }
     /* Themes */
     body.classic .progress { background: #FFD700; }
@@ -145,16 +170,20 @@
 <body class="classic" oncontextmenu="return false;">
 
   <div class="player-container" id="playerContainer">
-    <div class="video-wrapper">
+    <div class="video-wrapper" id="videoWrapper">
       <iframe id="ytPlayer" allow="autoplay; encrypted-media" allowfullscreen></iframe>
       <div id="overlayMessage">Click on Play button to start playback.</div>
+      <!-- Two cover bars for top/bottom -->
+      <div class="cover-bar top-cover"></div>
+      <div class="cover-bar bottom-cover"></div>
     </div>
 
     <div class="progress-bar" onclick="seekVideo(event)">
       <div class="progress" id="progressBar"></div>
     </div>
     <div class="time" id="timeDisplay">0:00 / 0:00</div>
-    <div class="controls hidden" id="controls">
+    <!-- Controls always visible -->
+    <div class="controls" id="controls">
       <button id="playPauseBtn" onclick="togglePlayPause()">Play</button>
       <div class="volume-container">
         <label>🔊</label>
@@ -177,23 +206,24 @@
 
   <script>
     // --- Token validation ---
-    const params = new URLSearchParams(window.location.search);
-    const idParam = params.get('id') || '';
+    const params    = new URLSearchParams(window.location.search);
+    const idParam   = params.get('id')    || '';
     const tokenParam = params.get('token') || '';
-    const today = new Date();
-    const dd = String(today.getDate()).padStart(2, '0');
-    const mm = String(today.getMonth()+1).padStart(2, '0');
-    const yy = String(today.getFullYear()).slice(-2);
+    const today     = new Date();
+    const dd        = String(today.getDate()).padStart(2, '0');
+    const mm        = String(today.getMonth() + 1).padStart(2, '0');
+    const yy        = String(today.getFullYear()).slice(-2);
     const validToken = CryptoJS.MD5(dd + mm + yy).toString();
     if (tokenParam !== validToken) {
-      document.body.innerHTML = '<div style="display:flex; height:100vh; margin:0; justify-content:center; align-items:center; background:#fff; color:#000; font-size:24px;">Access Denied</div>';
+      document.body.innerHTML = 
+        '<div style="display:flex; height:100vh; margin:0; justify-content:center; align-items:center; background:#fff; color:#000; font-size:24px;">Access Denied</div>';
       throw new Error('Invalid access token');
     }
 
     // --- Initialize iframe ---
     const decodedId = atob(idParam);
-    const iframe = document.getElementById('ytPlayer');
-    iframe.src = `https://www.youtube-nocookie.com/embed/${decodedId}?enablejsapi=1&controls=0&rel=0`;
+    const iframe    = document.getElementById('ytPlayer');
+    iframe.src      = `https://www.youtube-nocookie.com/embed/${decodedId}?enablejsapi=1&controls=0&rel=0`;
     document.getElementById('playerContainer').style.display = 'block';
 
     let player;
@@ -220,7 +250,7 @@
     }
 
     function formatTime(t) {
-      const hrs = Math.floor(t / 3600);
+      const hrs  = Math.floor(t / 3600);
       const mins = Math.floor((t % 3600) / 60);
       const secs = String(Math.floor(t % 60)).padStart(2, '0');
       if (hrs > 0) {
@@ -232,7 +262,7 @@
     // --- Core loop ---
     function updateProgress() {
       const current = player.getCurrentTime();
-      let duration = player.getDuration();
+      let duration  = player.getDuration();
       // Progress bar only for VOD
       if (!isLiveStream()) {
         const pct = (current / duration) * 100;
@@ -253,7 +283,7 @@
         return;
       }
       liveBtn.style.display = 'block';
-      const current = player.getCurrentTime();
+      const current  = player.getCurrentTime();
       const duration = player.getDuration(); // Infinity for live edge
       if (duration - current > 2) {
         liveBtn.textContent = 'Go Live';
@@ -285,16 +315,19 @@
         document.getElementById('overlayMessage').style.display = 'none';
       }
     }
-    function changeVolume(slider) { player.setVolume(parseInt(slider.value)); }
+    function changeVolume(slider) {
+      player.setVolume(parseInt(slider.value));
+    }
     function toggleFullscreen() {
-      const f = iframe;
-      if (f.requestFullscreen) f.requestFullscreen();
-      else if (f.webkitRequestFullscreen) f.webkitRequestFullscreen();
-      else if (f.msRequestFullscreen) f.msRequestFullscreen();
+      // Fullscreen on video-wrapper so only video + cover bars are fullscreen
+      const wrapper = document.getElementById('videoWrapper');
+      if (wrapper.requestFullscreen)            wrapper.requestFullscreen();
+      else if (wrapper.webkitRequestFullscreen)  wrapper.webkitRequestFullscreen();
+      else if (wrapper.msRequestFullscreen)      wrapper.msRequestFullscreen();
     }
     function seekVideo(e) {
       const r = e.currentTarget.getBoundingClientRect();
-      const p = (e.clientX - r.left)/r.width;
+      const p = (e.clientX - r.left) / r.width;
       player.seekTo(p * player.getDuration(), true);
     }
     function switchStyle(style) {
@@ -305,20 +338,51 @@
       if (isLiveStream()) player.seekTo(player.getDuration(), true);
     });
 
-    document.body.addEventListener('mousemove', () => {
-      controlsEl.classList.remove('hidden');
-      clearTimeout(window._controlsTimeout);
-      window._controlsTimeout = setTimeout(() => controlsEl.classList.add('hidden'), 3000);
-    });
-
     document.addEventListener('keydown', (e) => {
       switch(e.code) {
-        case 'Space': e.preventDefault(); togglePlayPause(); break;
-        case 'ArrowRight': player.seekTo(player.getCurrentTime()+10, true); break;
-        case 'ArrowLeft': player.seekTo(player.getCurrentTime()-10, true); break;
-        case 'KeyF': toggleFullscreen(); break;
+        case 'Space':
+          e.preventDefault();
+          togglePlayPause();
+          break;
+        case 'ArrowRight':
+          player.seekTo(player.getCurrentTime() + 10, true);
+          break;
+        case 'ArrowLeft':
+          player.seekTo(player.getCurrentTime() - 10, true);
+          break;
+        case 'KeyF':
+          toggleFullscreen();
+          break;
       }
     });
+
+    // --- Cover bars logic: show only when hovering their regions ---
+    (function() {
+      const videoWrapper = document.getElementById('videoWrapper');
+      const topCover     = document.querySelector('.top-cover');
+      const bottomCover  = document.querySelector('.bottom-cover');
+      const topHeight    = 60;
+      const bottomHeight = 50;
+
+      videoWrapper.addEventListener('mousemove', (e) => {
+        // Get the bounding rectangle of wrapper—even in fullscreen
+        const rect = videoWrapper.getBoundingClientRect();
+        const y    = e.clientY - rect.top;
+        // Show covers only if mouse is within top 60px or bottom 50px of the wrapper
+        if (y < topHeight || y > rect.height - bottomHeight) {
+          topCover.style.display    = 'block';
+          bottomCover.style.display = 'block';
+        } else {
+          topCover.style.display    = 'none';
+          bottomCover.style.display = 'none';
+        }
+      });
+
+      videoWrapper.addEventListener('mouseleave', () => {
+        topCover.style.display    = 'none';
+        bottomCover.style.display = 'none';
+      });
+    })();
 
     // --- Load YouTube API ---
     const tag = document.createElement('script');
