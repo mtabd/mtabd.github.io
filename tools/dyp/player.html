@@ -205,14 +205,14 @@
   </p>
 
   <script>
-    // --- Token validation ---
-    const params    = new URLSearchParams(window.location.search);
-    const idParam   = params.get('id')    || '';
+    // --- Token validation (unchanged) ---
+    const params     = new URLSearchParams(window.location.search);
+    const idParam    = params.get('id')    || '';
     const tokenParam = params.get('token') || '';
-    const today     = new Date();
-    const dd        = String(today.getDate()).padStart(2, '0');
-    const mm        = String(today.getMonth() + 1).padStart(2, '0');
-    const yy        = String(today.getFullYear()).slice(-2);
+    const today      = new Date();
+    const dd         = String(today.getDate()).padStart(2, '0');
+    const mm         = String(today.getMonth() + 1).padStart(2, '0');
+    const yy         = String(today.getFullYear()).slice(-2);
     const validToken = CryptoJS.MD5(dd + mm + yy).toString();
     if (tokenParam !== validToken) {
       document.body.innerHTML = 
@@ -220,30 +220,85 @@
       throw new Error('Invalid access token');
     }
 
-    // --- Initialize iframe ---
+    // --- Initialize iframe src and show container ---
     const decodedId = atob(idParam);
     const iframe    = document.getElementById('ytPlayer');
     iframe.src      = `https://www.youtube-nocookie.com/embed/${decodedId}?enablejsapi=1&controls=0&rel=0`;
     document.getElementById('playerContainer').style.display = 'block';
 
-    let player;
-    const playPauseBtn = document.getElementById('playPauseBtn');
-    const controlsEl   = document.getElementById('controls');
-    const liveBtn      = document.getElementById('liveBtn');
+    // --- COVER-BAR LOGIC (unchanged except showCovers/hideCovers) ---
+    let coverTimeout = null;
+    const topCover    = document.querySelector('.top-cover');
+    const bottomCover = document.querySelector('.bottom-cover');
+    let firstPlayDone = false; // Tracks if user has played at least once
+
+    function showCovers(durationMs) {
+      topCover.style.display    = 'block';
+      bottomCover.style.display = 'block';
+
+      // Only set a hide-timer if durationMs > 0
+      if (durationMs > 0) {
+        if (coverTimeout) {
+          clearTimeout(coverTimeout);
+        }
+        coverTimeout = setTimeout(() => {
+          hideCovers();
+        }, durationMs);
+      }
+      // If durationMs <= 0, covers remain until next explicit hideCovers()
+    }
+
+    function hideCovers() {
+      topCover.style.display    = 'none';
+      bottomCover.style.display = 'none';
+      coverTimeout = null;
+    }
+
+    // On initial load, show covers indefinitely until first Play
+    showCovers(0);
 
     // --- YouTube IFrame API setup ---
+    let player;
+    const playPauseBtn = document.getElementById('playPauseBtn');
+    const liveBtn      = document.getElementById('liveBtn');
+
     function onYouTubeIframeAPIReady() {
       player = new YT.Player('ytPlayer', {
         events: {
           onReady: () => {
-            // Start our loops
             tick();
-          }
+          },
+          onStateChange: onPlayerStateChange
         }
       });
     }
 
-    // --- Helpers ---
+    function onPlayerStateChange(event) {
+      const state = event.data;
+
+      // PLAYING (1) → first play or resume
+      if (state === YT.PlayerState.PLAYING) {
+        document.getElementById('overlayMessage').style.display = 'none';
+        playPauseBtn.textContent = 'Pause';
+
+        if (!firstPlayDone) {
+          // First-time play: keep covers visible for 5s, then hide
+          firstPlayDone = true;
+          showCovers(5000);
+        } else {
+          // Resume after pause: show covers 2s, then hide
+          showCovers(2000);
+        }
+      }
+
+      // PAUSED (2) → show covers indefinitely
+      if (state === YT.PlayerState.PAUSED) {
+        playPauseBtn.textContent = 'Play';
+        showCovers(0);
+      }
+    }
+
+    // --- Helpers (unchanged) ---
     function isLiveStream() {
       const data = player.getVideoData();
       return data && data.isLive === true;
@@ -259,16 +314,14 @@
       return `${mins}:${secs}`;
     }
 
-    // --- Core loop ---
+    // --- Core loop (unchanged) ---
     function updateProgress() {
       const current = player.getCurrentTime();
       let duration  = player.getDuration();
-      // Progress bar only for VOD
       if (!isLiveStream()) {
         const pct = (current / duration) * 100;
         document.getElementById('progressBar').style.width = pct + '%';
       }
-      // Time display
       const timeEl = document.getElementById('timeDisplay');
       if (isLiveStream()) {
         timeEl.textContent = formatTime(current);
@@ -302,24 +355,25 @@
       requestAnimationFrame(tick);
     }
 
-    // --- Controls ---
+    // --- Controls (modified togglePlayPause) ---
     function togglePlayPause() {
       const state = player.getPlayerState();
       if (state === YT.PlayerState.PLAYING) {
+        // User clicked “Pause”
         player.pauseVideo();
-        playPauseBtn.textContent = 'Play';
-        document.getElementById('overlayMessage').style.display = 'flex';
+        // Immediately show both covers without auto-hide
+        showCovers(0);
       } else {
+        // User clicked “Play”
         player.playVideo();
-        playPauseBtn.textContent = 'Pause';
-        document.getElementById('overlayMessage').style.display = 'none';
+        // onStateChange will sort out the correct 5s/2s logic
       }
     }
+
     function changeVolume(slider) {
       player.setVolume(parseInt(slider.value));
     }
     function toggleFullscreen() {
-      // Fullscreen on video-wrapper so only video + cover bars are fullscreen
       const wrapper = document.getElementById('videoWrapper');
       if (wrapper.requestFullscreen)            wrapper.requestFullscreen();
       else if (wrapper.webkitRequestFullscreen)  wrapper.webkitRequestFullscreen();
@@ -356,35 +410,27 @@
       }
     });
 
-    // --- Cover bars logic: show only when hovering their regions ---
+    // --- Cover bars logic (unchanged) ---
     (function() {
       const videoWrapper = document.getElementById('videoWrapper');
-      const topCover     = document.querySelector('.top-cover');
-      const bottomCover  = document.querySelector('.bottom-cover');
       const topHeight    = 60;
       const bottomHeight = 50;
 
       videoWrapper.addEventListener('mousemove', (e) => {
-        // Get the bounding rectangle of wrapper—even in fullscreen
-        const rect = videoWrapper.getBoundingClientRect();
-        const y    = e.clientY - rect.top;
-        // Show covers only if mouse is within top 60px or bottom 50px of the wrapper
-        if (y < topHeight || y > rect.height - bottomHeight) {
-          topCover.style.display    = 'block';
-          bottomCover.style.display = 'block';
-        } else {
-          topCover.style.display    = 'none';
-          bottomCover.style.display = 'none';
+        // Only re-show covers on hover if the video is currently playing
+        if (player && player.getPlayerState() === YT.PlayerState.PLAYING) {
+          const rect = videoWrapper.getBoundingClientRect();
+          const y    = e.clientY - rect.top;
+          if (y < topHeight || y > rect.height - bottomHeight) {
+            // Show for 2 seconds on each hover event
+            showCovers(2000);
+          }
         }
       });
-
-      videoWrapper.addEventListener('mouseleave', () => {
-        topCover.style.display    = 'none';
-        bottomCover.style.display = 'none';
-      });
+      // We no longer auto-hide on mouseleave; hiding is by timers in showCovers()
     })();
 
-    // --- Load YouTube API ---
+    // --- Load YouTube API (unchanged) ---
     const tag = document.createElement('script');
     tag.src = "https://www.youtube.com/iframe_api";
     document.body.appendChild(tag);
