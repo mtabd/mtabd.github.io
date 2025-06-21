@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Video Player</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background: #111;
+      color: #fff;
+      transition: background 0.5s, color 0.5s;
+    }
+    .player-container {
+      position: relative;
+      max-width: 900px;
+      margin: 20px auto;
+      background: #000;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 0 20px #000;
+      display: none;
+    }
+    .video-wrapper {
+      position: relative;
+      width: 100%;
+      padding-bottom: 56.25%;
+    }
+    .video-wrapper:fullscreen {
+      width: 100%;
+      height: 100%;
+      padding-bottom: 0;
+    }
+    .video-wrapper iframe,
+    .video-wrapper #overlayMessage {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+    }
+    #overlayMessage {
+      background: rgba(0,0,0,0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-size: 1rem;
+      font-weight: bold;
+      z-index: 2;
+      color: #fff;
+    }
+
+    /* COVER BARS */
+    .cover-bar {
+      position: absolute;
+      left: 0;
+      width: 100%;
+      background: #000;
+      display: none;
+      z-index: 4;
+    }
+    .top-cover {
+      top: 0;
+      height: 70px;
+      pointer-events: none;
+    }
+    .bottom-cover {
+      bottom: 0;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: auto;
+    }
+
+    /* Controls inside bottom cover */
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+    }
+    .volume-container {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .volume-slider {
+      width: 80px;
+      max-width: 30vw;
+    }
+    button, select, input[type=range] {
+      font-size: 1rem;
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+    }
+    button {
+      background: #444;
+      color: white;
+    }
+    button:hover {
+      background: #666;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      background: #333;
+      position: relative;
+      cursor: pointer;
+    }
+    .progress {
+      height: 100%;
+      background: #FFD700;
+      width: 0%;
+    }
+    .time {
+      text-align: center;
+      font-size: 0.9rem;
+    }
+
+    /* Themes */
+    body.classic .progress { background: #FFD700; }
+    body.neon .progress { background: #39FF14; }
+    body.neon button { background: #00f2ff; color: #111; }
+    body.neon button:hover { background: #0ff; }
+    body.lime .progress { background: #ADFF2F; }
+    body.lime button { background: #9ACD32; color: #111; }
+    body.lime button:hover { background: #bfff00; }
+
+    .live-btn {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      padding: 6px 12px;
+      border: none;
+      border-radius: 4px;
+      background: grey;
+      color: #fff;
+      font-weight: bold;
+      cursor: pointer;
+      z-index: 3;
+      display: none;
+    }
+    .live-btn.blink {
+      animation: blink 1s step-start infinite;
+      background: red;
+    }
+    @keyframes blink {
+      50% { opacity: 0.5; }
+    }
+
+    @media (max-width: 600px) {
+      .controls { gap: 8px; }
+      button, select, input[type=range] { font-size: 0.85rem; padding: 4px 8px; }
+      .time { font-size: 0.8rem; }
+      p { font-size: 0.9rem; margin: 10px; }
+    }
+  </style>
+</head>
+<body class="classic" oncontextmenu="return false;">
+
+  <div class="player-container" id="playerContainer">
+    <div class="video-wrapper" id="videoWrapper">
+      <iframe id="ytPlayer" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+      <div id="overlayMessage">Click on Play button to start playback.</div>
+      <div class="cover-bar top-cover"></div>
+      <div class="cover-bar bottom-cover">
+        <div class="controls" id="controls">
+          <button id="playPauseBtn" onclick="togglePlayPause()">Play</button>
+          <div class="volume-container">
+            <label>🔊</label>
+            <input type="range" min="0" max="100" value="100" class="volume-slider" onchange="changeVolume(this)">
+          </div>
+          <button onclick="toggleFullscreen()">Fullscreen</button>
+          <select onchange="switchStyle(this.value)">
+            <option value="classic">🎥 Classic</option>
+            <option value="neon">🌈 Neon</option>
+            <option value="lime">🍋 Lime</option>
+          </select>
+        </div>
+        <div class="progress-bar" onclick="seekVideo(event)">
+          <div class="progress" id="progressBar"></div>
+        </div>
+        <div class="time" id="timeDisplay">0:00 / 0:00</div>
+      </div>
+    </div>
+
+    <button id="liveBtn" class="live-btn">Go Live</button>
+  </div>
+
+  <p style="text-align:center">Press "Esc" to exit fullscreen.</p>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const idParam = params.get('id') || '';
+    const tokenParam = params.get('token') || '';
+    const today = new Date();
+    const dd = String(today.getDate()).padStart(2, '0');
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const yy = String(today.getFullYear()).slice(-2);
+    const validToken = CryptoJS.MD5(dd + mm + yy).toString();
+    if (tokenParam !== validToken) {
+      document.body.innerHTML = '<div style="display:flex; height:100vh; justify-content:center; align-items:center; background:#fff; color:#000; font-size:24px;">Access Denied</div>';
+      throw new Error('Invalid access token');
+    }
+
+    const decodedId = atob(idParam);
+    const iframe = document.getElementById('ytPlayer');
+    iframe.src = `https://www.youtube-nocookie.com/embed/${decodedId}?enablejsapi=1&controls=0&rel=0`;
+    document.getElementById('playerContainer').style.display = 'block';
+
+    let coverTimeout = null;
+    const topCover = document.querySelector('.top-cover');
+    const bottomCover = document.querySelector('.bottom-cover');
+    let firstPlayDone = false;
+
+    function showCovers(durationMs) {
+      topCover.style.display = 'block';
+      bottomCover.style.display = 'flex';
+      if (coverTimeout) clearTimeout(coverTimeout);
+      if (durationMs > 0) {
+        coverTimeout = setTimeout(hideCovers, durationMs);
+      }
+    }
+
+    function hideCovers() {
+      topCover.style.display = 'none';
+      bottomCover.style.display = 'none';
+      coverTimeout = null;
+    }
+
+    showCovers(0);
+
+    let player;
+    const playPauseBtn = document.getElementById('playPauseBtn');
+    const liveBtn = document.getElementById('liveBtn');
+
+    function onYouTubeIframeAPIReady() {
+      player = new YT.Player('ytPlayer', {
+        events: {
+          onReady: tick,
+          onStateChange: onPlayerStateChange
+        }
+      });
+    }
+
+    function onPlayerStateChange(event) {
+      const state = event.data;
+      if (state === YT.PlayerState.PLAYING) {
+        document.getElementById('overlayMessage').style.display = 'none';
+        playPauseBtn.textContent = 'Pause';
+        showCovers(firstPlayDone ? 2000 : 5000);
+        firstPlayDone = true;
+      }
+      if (state === YT.PlayerState.PAUSED) {
+        playPauseBtn.textContent = 'Play';
+        showCovers(0);
+      }
+    }
+
+    function isLiveStream() {
+      const data = player.getVideoData();
+      return data && data.isLive === true;
+    }
+
+    function formatTime(t) {
+      const hrs = Math.floor(t / 3600);
+      const mins = Math.floor((t % 3600) / 60);
+      const secs = String(Math.floor(t % 60)).padStart(2, '0');
+      return hrs > 0 ? `${hrs}:${String(mins).padStart(2,'0')}:${secs}` : `${mins}:${secs}`;
+    }
+
+    function updateProgress() {
+      const current = player.getCurrentTime();
+      let duration = player.getDuration();
+      if (!isLiveStream()) {
+        const pct = (current / duration) * 100;
+        document.getElementById('progressBar').style.width = pct + '%';
+      }
+      const timeEl = document.getElementById('timeDisplay');
+      timeEl.textContent = isLiveStream() ? formatTime(current) : `${formatTime(current)} / ${formatTime(duration)}`;
+    }
+
+    function updateLiveBtn() {
+      if (!isLiveStream()) {
+        liveBtn.style.display = 'none';
+        return;
+      }
+      liveBtn.style.display = 'block';
+      const current = player.getCurrentTime();
+      const duration = player.getDuration();
+      if (duration - current > 2) {
+        liveBtn.textContent = 'Go Live';
+        liveBtn.classList.remove('blink');
+      } else {
+        liveBtn.textContent = 'Live streaming';
+        liveBtn.classList.add('blink');
+      }
+    }
+
+    function tick() {
+      if (player && player.getCurrentTime) {
+        updateProgress();
+        updateLiveBtn();
+      }
+      requestAnimationFrame(tick);
+    }
+
+    function togglePlayPause() {
+      const state = player.getPlayerState();
+      if (state === YT.PlayerState.PLAYING) {
+        player.pauseVideo();
+        showCovers(0);
+      } else {
+        player.playVideo();
+      }
+    }
+
+    function changeVolume(slider) {
+      player.setVolume(parseInt(slider.value));
+    }
+
+    function toggleFullscreen() {
+      const wrapper = document.getElementById('videoWrapper');
+      if (wrapper.requestFullscreen) wrapper.requestFullscreen();
+      else if (wrapper.webkitRequestFullscreen) wrapper.webkitRequestFullscreen();
+      else if (wrapper.msRequestFullscreen) wrapper.msRequestFullscreen();
+    }
+
+    function seekVideo(e) {
+      const r = e.currentTarget.getBoundingClientRect();
+      const p = (e.clientX - r.left) / r.width;
+      player.seekTo(p * player.getDuration(), true);
+    }
+
+    function switchStyle(style) {
+      document.body.className = style;
+    }
+
+    liveBtn.addEventListener('click', () => {
+      if (isLiveStream()) player.seekTo(player.getDuration(), true);
+    });
+
+    document.addEventListener('keydown', (e) => {
+      switch(e.code) {
+        case 'Space': e.preventDefault(); togglePlayPause(); break;
+        case 'ArrowRight': player.seekTo(player.getCurrentTime() + 10, true); break;
+        case 'ArrowLeft': player.seekTo(player.getCurrentTime() - 10, true); break;
+        case 'KeyF': toggleFullscreen(); break;
+      }
+    });
+
+    (function() {
+      const videoWrapper = document.getElementById('videoWrapper');
+      const topHeight = 70;
+      const bottomHeight = 100;
+
+      videoWrapper.addEventListener('mousemove', (e) => {
+        if (player && player.getPlayerState() === YT.PlayerState.PLAYING) {
+          const rect = videoWrapper.getBoundingClientRect();
+          const y = e.clientY - rect.top;
+          const isOverTop = y < topHeight;
+          const isOverBottom = y > rect.height - bottomHeight;
+          if (isOverTop || isOverBottom) {
+            showCovers(0); // stay visible while hovering
+          } else {
+            showCovers(2000); // hide 2s after leaving
+          }
+        }
+      });
+
+      videoWrapper.addEventListener('mouseleave', () => {
+        if (player && player.getPlayerState() === YT.PlayerState.PLAYING) {
+          showCovers(2000);
+        }
+      });
+    })();
+
+    const tag = document.createElement('script');
+    tag.src = "https://www.youtube.com/iframe_api";
+    document.body.appendChild(tag);
+  </script>
+</body>
+</html>
