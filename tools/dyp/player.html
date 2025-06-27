@@ -35,21 +35,14 @@
       padding-bottom: 0;
     }
     .video-wrapper iframe,
-    .video-wrapper #overlayMessage,
-    .video-wrapper .video-thumbnail {
+    .video-wrapper #overlayMessage {
       position: absolute;
       top: 0; left: 0;
       width: 100%; height: 100%;
+      pointer-events: none;
     }
-
-    .video-wrapper .video-thumbnail {
-      object-fit: cover;
-      z-index: 1;
-      cursor: pointer;
-    }
-
     #overlayMessage {
-      background: rgba(0,0,0,0.1);
+      background: rgba(0,0,0,0.8);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -58,7 +51,6 @@
       font-weight: bold;
       z-index: 2;
       color: #fff;
-      pointer-events: none;
     }
 
     /* COVER BARS */
@@ -169,19 +161,12 @@
       .time { font-size: 0.8rem; }
       p { font-size: 0.9rem; margin: 10px; }
     }
-	.video-wrapper iframe {
-		border: none;
-		border-radius: 12px;
-		background-color: #000;
-		display: block;
-	}
-
   </style>
 </head>
 <body class="classic" oncontextmenu="return false;">
+
   <div class="player-container" id="playerContainer">
     <div class="video-wrapper" id="videoWrapper">
-      <img class="video-thumbnail" id="videoThumbnail" src="https://online.utkorsho.tech/Content/UmsTheme/assets/img/course-5.jpg" alt="Video thumbnail">
       <iframe id="ytPlayer" allow="autoplay; encrypted-media" allowfullscreen></iframe>
       <div id="overlayMessage">Click on Play button to start playback.</div>
       <div class="cover-bar top-cover"></div>
@@ -255,7 +240,6 @@
     let player;
     const playPauseBtn = document.getElementById('playPauseBtn');
     const liveBtn = document.getElementById('liveBtn');
-    const thumbnail = document.getElementById('videoThumbnail');
 
     function onYouTubeIframeAPIReady() {
       player = new YT.Player('ytPlayer', {
@@ -272,7 +256,6 @@
         document.getElementById('overlayMessage').style.display = 'none';
         playPauseBtn.textContent = 'Pause';
         showCovers(firstPlayDone ? 2000 : 5000);
-        thumbnail.style.display = 'none';
         firstPlayDone = true;
       }
       if (state === YT.PlayerState.PAUSED) {
@@ -385,9 +368,9 @@
           const isOverTop = y < topHeight;
           const isOverBottom = y > rect.height - bottomHeight;
           if (isOverTop || isOverBottom) {
-            showCovers(0);
+            showCovers(0); // stay visible while hovering
           } else {
-            showCovers(2000);
+            showCovers(2000); // hide 2s after leaving
           }
         }
       });
